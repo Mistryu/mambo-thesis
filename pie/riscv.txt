@@ -274,6 +274,17 @@ fmv_x_d          11100010 0000aaaa a000bbbb b1010011, b:rd, a:f_rs1
 fcvt_d_l         11010010 0010aaaa abbbcccc c1010011, c:f_rd, a:rs1, b:rm
 fcvt_d_lu        11010010 0011aaaa abbbcccc c1010011, c:f_rd, a:rs1, b:rm
 fmv_d_x          11110010 0000aaaa a000bbbb b1010011, b:f_rd, a:rs1
+#
+# RV64V Standard Extension for Vector Operations -- RV64V 1.0 Ratified
+v_arith_generic   aaaaaabc ccccdddd deeeffff f1010111, a:funct6, b:vm, c:vs2, d:vs1, e:funct3, f:vd
+v_load_1          aaabccde eeeeffff f000gggg g0000111, a:nf, b:mew, c:mop, d:vm, e:v2, f:rs1, g:vd
+v_load_2          aaabccde eeeeffff f101gggg g0000111, a:nf, b:mew, c:mop, d:vm, e:v2, f:rs1, g:vd
+v_load_3          aaabccde eeeeffff f110gggg g0000111, a:nf, b:mew, c:mop, d:vm, e:v2, f:rs1, g:vd
+v_load_4          aaabccde eeeeffff f111gggg g0000111, a:nf, b:mew, c:mop, d:vm, e:v2, f:rs1, g:vd
+v_store_1         aaabccde eeeeffff f000gggg g0100111, a:nf, b:mew, c:mop, d:vm, e:v2, f:rs1, g:vd
+v_store_2         aaabccde eeeeffff f101gggg g0100111, a:nf, b:mew, c:mop, d:vm, e:v2, f:rs1, g:vd
+v_store_3         aaabccde eeeeffff f110gggg g0100111, a:nf, b:mew, c:mop, d:vm, e:v2, f:rs1, g:vd
+v_store_4         aaabccde eeeeffff f111gggg g0100111, a:nf, b:mew, c:mop, d:vm, e:v2, f:rs1, g:vd
 
 #
 # Generic instruction types

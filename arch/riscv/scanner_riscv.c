@@ -1290,6 +1290,16 @@ size_t scan_riscv(dbm_thread *thread_data, uint16_t *read_address,
         case RISCV_FCVT_D_L:
         case RISCV_FCVT_D_LU:
         case RISCV_FMV_D_X:
+	// RV64V
+	case RISCV_V_ARITH_GENERIC:
+	case RISCV_V_LOAD_1:
+	case RISCV_V_LOAD_2:
+	case RISCV_V_LOAD_3:
+	case RISCV_V_LOAD_4:
+	case RISCV_V_STORE_1:
+	case RISCV_V_STORE_2:
+	case RISCV_V_STORE_3:
+	case RISCV_V_STORE_4:
           copy_riscv();
           break;
 #endif

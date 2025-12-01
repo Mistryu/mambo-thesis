@@ -12,6 +12,7 @@
 #PLUGINS+=plugins/hotspot.c
 #PLUGINS+=plugins/datarace/datarace.c plugins/datarace/detectors/fasttrack.c
 #PLUGINS+=plugins/datarace/datarace.c plugins/datarace/detectors/djit.c
+#PLUGINS+=plugins/vector_counter.c
 
 OPTS= -DDBM_LINK_UNCOND_IMM
 OPTS+=-DDBM_INLINE_UNCOND_IMM
@@ -30,7 +31,7 @@ CFLAGS+=-D_GNU_SOURCE -g -std=gnu99 -O2 -Wunused-variable
 CFLAGS+=-DVERSION=\"$(VERSION)\"
 
 LDFLAGS+=-static -ldl
-LIBS=-lelf -lpthread -lz
+LIBS=-lelf -lpthread -lz -lzstd
 HEADERS=*.h makefile
 INCLUDES=-I/usr/include/libelf -I.
 SOURCES= common.c dbm.c traces.c syscalls.c dispatcher.c util.S traces_common.c
