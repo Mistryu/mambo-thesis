@@ -27,7 +27,7 @@ static inline bool rvv_is_vector_word(uint32_t insn) {
 
     case 0x07:
     case 0x27:
-        switch (funct3) { // 
+        switch (funct3) {
         // get all vector encodings under LOAD-FP/STORE-FP opcodes
         case 0b000:
         case 0b101:
@@ -150,10 +150,18 @@ static void read_register_value(uint8_t reg_num, bool is_vector, void *buffer) {
     }
 }
 
-// Emit code to read a register value at runtime
-// reg_num: register number (0-31)
-// is_vector: true for vector registers (v0-v31), false for GP registers (x0-x31)
-// buffer: pointer to buffer where register value will be stored
+// Batch read multiple vector registers at once
+static void read_registers_batch(uint8_t vd, uint8_t vs1, uint8_t vs2, uint8_t v0_flag,
+                                  void *vd_buf, void *vs1_buf, void *vs2_buf, void *v0_buf) {
+    read_register_value(vd, true, vd_buf);
+    read_register_value(vs1, true, vs1_buf);
+    read_register_value(vs2, true, vs2_buf);
+    if (v0_flag == 0) {
+        read_register_value(0, true, v0_buf);
+    }
+}
+
+// Emit code to read a register value at runtime (single register - used for vd_after)
 // We need to emit the instruction directly into the code so they run at runtime not during instrumentation
 // Source: docs/tutorials/hipeac2025/exercise4/README.md Per Instruction Callbacks
 // Also inside docs/tutorials/hipeac2025/exercise4/solution/solution.c
@@ -176,6 +184,39 @@ static void emit_read_register(mambo_context *ctx, uint8_t reg_num, bool is_vect
     
     // Restore registers    
     emit_pop(ctx, (1 << reg0) | (1 << reg1) | (1 << reg2) | (1 << lr));
+}
+
+// Emit code to batch read multiple vector registers at once
+// This significantly reduces code emission compared to multiple separate calls
+// Arguments: vd, vs1, vs2, uses_mask, vd_buf, vs1_buf, vs2_buf, v0_buf
+static void emit_read_registers_batch(mambo_context *ctx, uint8_t vd, uint8_t vs1, uint8_t vs2, 
+                                      bool uses_mask, void *vd_buf, void *vs1_buf, 
+                                      void *vs2_buf, void *v0_buf) {
+    // emit_safe_fcall does NOT preserve lr
+    // We need to save: reg0, reg1, reg2, reg3, reg4, reg5, reg6, reg7, lr
+    // RISC-V: reg0=a0, reg1=a1, reg2=a2, reg3=a3, reg4=a4, reg5=a5, reg6=a6, reg7=a7
+    // But MAX_FCALL_ARGS is 8, so we can use a0-a7 for arguments
+    emit_push(ctx, (1 << reg0) | (1 << reg1) | (1 << reg2) | (1 << reg3) | 
+                   (1 << reg4) | (1 << reg5) | (1 << reg6) | (1 << reg7) | (1 << lr));
+    
+    // Seting up arguments for read_registers_batch(vd, vs1, vs2, v0_flag, vd_buf, vs1_buf, vs2_buf, v0_buf)
+    // These are the instruction we will exectute at runtime and not during instrumentation
+    // Here I set first 8 registers as arguments for read_registers_batch function call
+    emit_set_reg(ctx, reg0, vd);
+    emit_set_reg(ctx, reg1, vs1);
+    emit_set_reg(ctx, reg2, vs2);
+    emit_set_reg(ctx, reg3, uses_mask ? 0 : 1);
+    emit_set_reg_ptr(ctx, reg4, vd_buf);
+    emit_set_reg_ptr(ctx, reg5, vs1_buf);
+    emit_set_reg_ptr(ctx, reg6, vs2_buf);
+    emit_set_reg_ptr(ctx, reg7, v0_buf);
+    
+    // Generating function call that will execute at runtime
+    emit_safe_fcall(ctx, (void *)read_registers_batch, 8);
+    
+    // Restore registers
+    emit_pop(ctx, (1 << reg0) | (1 << reg1) | (1 << reg2) | (1 << reg3) | 
+                  (1 << reg4) | (1 << reg5) | (1 << reg6) | (1 << reg7) | (1 << lr));
 }
 
 
@@ -352,13 +393,12 @@ static struct rr_entry *init_rr_entry(mambo_context *ctx, uintptr_t pc, uint32_t
 }
 
 // Emit code to capture register values before instruction
+// Uses batched register read to reduce code emission significantly
 static void capture_registers_before(mambo_context *ctx, struct rr_entry *entry) {
-    emit_read_register(ctx, entry->vd, true, entry->vd_before);
-    emit_read_register(ctx, entry->vs1, true, entry->vs1_before);
-    emit_read_register(ctx, entry->vs2, true, entry->vs2_before);
-    if (entry->uses_mask) {
-        emit_read_register(ctx, 0, true, entry->v0_before);
-    }
+    // Batch all register reads into a single function call
+    emit_read_registers_batch(ctx, entry->vd, entry->vs1, entry->vs2, entry->uses_mask,
+                              entry->vd_before, entry->vs1_before, entry->vs2_before, 
+                              entry->v0_before);
 }
 
 // Runtime function: Add entry to trace buffer (after instruction executes)
@@ -537,5 +577,9 @@ memory accesses load and stores
 
 
 
-
 */ 
+
+/*
+I have a big issue that I emit too many instruction. I need to optimize it otherwise the code doesn't run. 
+
+*/
