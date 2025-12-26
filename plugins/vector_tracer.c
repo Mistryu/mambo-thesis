@@ -55,55 +55,58 @@ Reading registers
 */
 
 // Function to read register values during runtime
-// For vector registers: uses cached vlenb and stores register using vse.v
+// For vector registers: uses cached vlenb and stores register using vse8.v
 // For GP registers: reads register value directly
 static void read_register_value(uint8_t reg_num, bool is_vector, void *buffer) {
     if (is_vector) {
         // Use uintptr_t for address to avoid type mismatch as "r" needs integer not pointer
         uintptr_t addr = (uintptr_t)buffer;
         
-        // Store vector register to buffer using vse.v
-        // vse.v vd, (rs1) - stores vector register vd to address in rs1 
-        // We can't use "vse.v v%0, (%1)" with operand substitution because GCC doesn't support it
+        // Store vector register to buffer using vse8.v (RISC-V Vector Extension spec-compliant)
+        // vse8.v vd, (rs1) - stores entire vector register vd as bytes to address in rs1
+        // Stores VLEN bytes (entire register contents regardless of element width)
+        // We can't use "vse8.v v%0, (%1)" with operand substitution because GCC doesn't support it
         // it replaces %0 with a0 and we get va0 aka not a valid register
-
-        // mv a0, zero    ; Move value from zero (x0) to a0
-        // Then GCC copies the value from a0 into reg_value
-        
         // Reference: https://gcc.gnu.org/onlinedocs/gcc/Extended-Asm.html
+        // https://github.com/riscvarchive/riscv-v-spec/releases/tag/v1.0
+
+
+        //TODO:
+        // Another issue is that vse8 only stores VL bytes not VLEN bytes. 
+        // I need to have VL set to VL>= vlanb otherwise not all bytes are stored
         switch (reg_num) {
-            case 0:  asm volatile("vse.v v0, (%0)" : : "r"(addr) : "memory"); break;
-            case 1:  asm volatile("vse.v v1, (%0)" : : "r"(addr) : "memory"); break;
-            case 2:  asm volatile("vse.v v2, (%0)" : : "r"(addr) : "memory"); break;
-            case 3:  asm volatile("vse.v v3, (%0)" : : "r"(addr) : "memory"); break;
-            case 4:  asm volatile("vse.v v4, (%0)" : : "r"(addr) : "memory"); break;
-            case 5:  asm volatile("vse.v v5, (%0)" : : "r"(addr) : "memory"); break;
-            case 6:  asm volatile("vse.v v6, (%0)" : : "r"(addr) : "memory"); break;
-            case 7:  asm volatile("vse.v v7, (%0)" : : "r"(addr) : "memory"); break;
-            case 8:  asm volatile("vse.v v8, (%0)" : : "r"(addr) : "memory"); break;
-            case 9:  asm volatile("vse.v v9, (%0)" : : "r"(addr) : "memory"); break;
-            case 10: asm volatile("vse.v v10, (%0)" : : "r"(addr) : "memory"); break;
-            case 11: asm volatile("vse.v v11, (%0)" : : "r"(addr) : "memory"); break;
-            case 12: asm volatile("vse.v v12, (%0)" : : "r"(addr) : "memory"); break;
-            case 13: asm volatile("vse.v v13, (%0)" : : "r"(addr) : "memory"); break;
-            case 14: asm volatile("vse.v v14, (%0)" : : "r"(addr) : "memory"); break;
-            case 15: asm volatile("vse.v v15, (%0)" : : "r"(addr) : "memory"); break;
-            case 16: asm volatile("vse.v v16, (%0)" : : "r"(addr) : "memory"); break;
-            case 17: asm volatile("vse.v v17, (%0)" : : "r"(addr) : "memory"); break;
-            case 18: asm volatile("vse.v v18, (%0)" : : "r"(addr) : "memory"); break;
-            case 19: asm volatile("vse.v v19, (%0)" : : "r"(addr) : "memory"); break;
-            case 20: asm volatile("vse.v v20, (%0)" : : "r"(addr) : "memory"); break;
-            case 21: asm volatile("vse.v v21, (%0)" : : "r"(addr) : "memory"); break;
-            case 22: asm volatile("vse.v v22, (%0)" : : "r"(addr) : "memory"); break;
-            case 23: asm volatile("vse.v v23, (%0)" : : "r"(addr) : "memory"); break;
-            case 24: asm volatile("vse.v v24, (%0)" : : "r"(addr) : "memory"); break;
-            case 25: asm volatile("vse.v v25, (%0)" : : "r"(addr) : "memory"); break;
-            case 26: asm volatile("vse.v v26, (%0)" : : "r"(addr) : "memory"); break;
-            case 27: asm volatile("vse.v v27, (%0)" : : "r"(addr) : "memory"); break;
-            case 28: asm volatile("vse.v v28, (%0)" : : "r"(addr) : "memory"); break;
-            case 29: asm volatile("vse.v v29, (%0)" : : "r"(addr) : "memory"); break;
-            case 30: asm volatile("vse.v v30, (%0)" : : "r"(addr) : "memory"); break;
-            case 31: asm volatile("vse.v v31, (%0)" : : "r"(addr) : "memory"); break;
+            case 0:  asm volatile("vse8.v v0, (%0)" : : "r"(addr) : "memory"); break;
+            case 1:  asm volatile("vse8.v v1, (%0)" : : "r"(addr) : "memory"); break;
+            case 2:  asm volatile("vse8.v v2, (%0)" : : "r"(addr) : "memory"); break;
+            case 3:  asm volatile("vse8.v v3, (%0)" : : "r"(addr) : "memory"); break;
+            case 4:  asm volatile("vse8.v v4, (%0)" : : "r"(addr) : "memory"); break;
+            case 5:  asm volatile("vse8.v v5, (%0)" : : "r"(addr) : "memory"); break;
+            case 6:  asm volatile("vse8.v v6, (%0)" : : "r"(addr) : "memory"); break;
+            case 7:  asm volatile("vse8.v v7, (%0)" : : "r"(addr) : "memory"); break;
+            case 8:  asm volatile("vse8.v v8, (%0)" : : "r"(addr) : "memory"); break;
+            case 9:  asm volatile("vse8.v v9, (%0)" : : "r"(addr) : "memory"); break;
+            case 10: asm volatile("vse8.v v10, (%0)" : : "r"(addr) : "memory"); break;
+            case 11: asm volatile("vse8.v v11, (%0)" : : "r"(addr) : "memory"); break;
+            case 12: asm volatile("vse8.v v12, (%0)" : : "r"(addr) : "memory"); break;
+            case 13: asm volatile("vse8.v v13, (%0)" : : "r"(addr) : "memory"); break;
+            case 14: asm volatile("vse8.v v14, (%0)" : : "r"(addr) : "memory"); break;
+            case 15: asm volatile("vse8.v v15, (%0)" : : "r"(addr) : "memory"); break;
+            case 16: asm volatile("vse8.v v16, (%0)" : : "r"(addr) : "memory"); break;
+            case 17: asm volatile("vse8.v v17, (%0)" : : "r"(addr) : "memory"); break;
+            case 18: asm volatile("vse8.v v18, (%0)" : : "r"(addr) : "memory"); break;
+            case 19: asm volatile("vse8.v v19, (%0)" : : "r"(addr) : "memory"); break;
+            case 20: asm volatile("vse8.v v20, (%0)" : : "r"(addr) : "memory"); break;
+            case 21: asm volatile("vse8.v v21, (%0)" : : "r"(addr) : "memory"); break;
+            case 22: asm volatile("vse8.v v22, (%0)" : : "r"(addr) : "memory"); break;
+            case 23: asm volatile("vse8.v v23, (%0)" : : "r"(addr) : "memory"); break;
+            case 24: asm volatile("vse8.v v24, (%0)" : : "r"(addr) : "memory"); break;
+            case 25: asm volatile("vse8.v v25, (%0)" : : "r"(addr) : "memory"); break;
+            case 26: asm volatile("vse8.v v26, (%0)" : : "r"(addr) : "memory"); break;
+            case 27: asm volatile("vse8.v v27, (%0)" : : "r"(addr) : "memory"); break;
+            case 28: asm volatile("vse8.v v28, (%0)" : : "r"(addr) : "memory"); break;
+            case 29: asm volatile("vse8.v v29, (%0)" : : "r"(addr) : "memory"); break;
+            case 30: asm volatile("vse8.v v30, (%0)" : : "r"(addr) : "memory"); break;
+            case 31: asm volatile("vse8.v v31, (%0)" : : "r"(addr) : "memory"); break;
             default: break; // Invalid register number
         }
     } else {
@@ -517,7 +520,7 @@ __attribute__((destructor)) static void vector_counter_fini(void) {
 
 
 // TODO figure out how to get the vector register values
-// Should we use the vse.v instruction to get the vector register values?
+// Should we use the vse8.v instruction to get the vector register values?
 // There is something called emit. I think we have to put our own instructions in the code and use them to save the vector register values
 // Should we use that approach? How time consuming would it be?
 /*

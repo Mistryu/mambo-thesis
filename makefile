@@ -63,7 +63,10 @@ endif
 ifeq ($(ARCH), riscv64)
 	HEADERS += api/emit_riscv.h
 	# CFLAGS arguments for RISC-V vector extension as it may not have been enabled
-	CFLAGS += -march=rv64gcv -mabi=lp64d 
+	# This prevented me from using vse.v
+	CFLAGS += -march=rv64gcv -mabi=lp64d
+	# Also passing to assembler explicitly
+	ASFLAGS += -march=rv64gcv
 	LDFLAGS += -Wl,-Ttext-segment=$(or $(TEXT_SEGMENT),0x7f000000)
 	PIE += pie/pie-riscv-field-decoder.o
 	PIE += pie/pie-riscv-encoder.o
