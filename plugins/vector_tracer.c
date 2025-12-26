@@ -197,8 +197,7 @@ static void emit_read_register(mambo_context *ctx, uint8_t reg_num, bool is_vect
 // This significantly reduces code emission compared to multiple separate calls
 // Passes entry pointer as constant - entry is allocated with mambo_alloc so it persists
 static void emit_read_registers_batch(mambo_context *ctx, struct rr_entry *entry) {
-    fprintf(stderr, "[DEBUG] emit_read_registers_batch: entry=%p, vd=%u, vs1=%u, vs2=%u\n",
-            (void *)entry, entry ? entry->vd : 0, entry ? entry->vs1 : 0, entry ? entry->vs2 : 0);
+    fprintf(stderr, "[DEBUG] emit_read_registers_batch: entry=%p\n", (void *)entry);
     
     if (!entry) {
         fprintf(stderr, "[DEBUG] ERROR: entry is NULL in emit_read_registers_batch!\n");
@@ -308,7 +307,9 @@ static void read_registers_batch(struct rr_entry *entry) {
     
     // Set VL to vlenb (maximum) to store entire register
     // vsetvli rd, rs1, e8, m1 - sets VL=min(rs1, VLMAX) with e8 (8-bit elements), m1 (masked)
-    asm volatile("vsetvli zero, %0, e8, m1" : : "r"(cached_vlenb) : "vtype", "vl");
+
+    // We might have to set vtype to e8, m1 before setting VL this is just for nebugging rn fix it later
+    asm volatile("vsetvli zero, %0, e8, m1" : : "r"(cached_vlenb) : "memory");
     asm volatile("csrr %0, vl" : "=r"(vl));
     fprintf(stderr, "[DEBUG] Set VL to %u\n", vl);
     
