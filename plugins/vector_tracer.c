@@ -48,6 +48,10 @@ static uint32_t cached_vlenb = 256;
 static uint64_t vector_inst_count = 0;
 static uint64_t reg_reg_count = 0;
 
+// Forward declarations
+struct rr_entry;
+static void read_registers_batch(struct rr_entry *entry);
+
 /*
 
 Reading registers
@@ -150,17 +154,6 @@ static void read_register_value(uint8_t reg_num, bool is_vector, void *buffer) {
     }
 }
 
-// Batch read multiple vector registers at once
-static void read_registers_batch(uint8_t vd, uint8_t vs1, uint8_t vs2, uint8_t v0_flag,
-                                  void *vd_buf, void *vs1_buf, void *vs2_buf, void *v0_buf) {
-    read_register_value(vd, true, vd_buf);
-    read_register_value(vs1, true, vs1_buf);
-    read_register_value(vs2, true, vs2_buf);
-    if (v0_flag == 0) {
-        read_register_value(0, true, v0_buf);
-    }
-}
-
 // Emit code to read a register value at runtime (single register - used for vd_after)
 // We need to emit the instruction directly into the code so they run at runtime not during instrumentation
 // Source: docs/tutorials/hipeac2025/exercise4/README.md Per Instruction Callbacks
@@ -188,35 +181,22 @@ static void emit_read_register(mambo_context *ctx, uint8_t reg_num, bool is_vect
 
 // Emit code to batch read multiple vector registers at once
 // This significantly reduces code emission compared to multiple separate calls
-// Arguments: vd, vs1, vs2, uses_mask, vd_buf, vs1_buf, vs2_buf, v0_buf
-static void emit_read_registers_batch(mambo_context *ctx, uint8_t vd, uint8_t vs1, uint8_t vs2, 
-                                      bool uses_mask, void *vd_buf, void *vs1_buf, 
-                                      void *vs2_buf, void *v0_buf) {
+// Passes entry pointer instead of 8 separate arguments to avoid a7 conflict
+// (a7 is used for function pointer in emit_safe_fcall)
+static void emit_read_registers_batch(mambo_context *ctx, struct rr_entry *entry) {
     // emit_safe_fcall does NOT preserve lr
-    // We need to save: reg0, reg1, reg2, reg3, reg4, reg5, reg6, reg7, lr
-    // RISC-V: reg0=a0, reg1=a1, reg2=a2, reg3=a3, reg4=a4, reg5=a5, reg6=a6, reg7=a7
-    // But MAX_FCALL_ARGS is 8, so we can use a0-a7 for arguments
-    emit_push(ctx, (1 << reg0) | (1 << reg1) | (1 << reg2) | (1 << reg3) | 
-                   (1 << reg4) | (1 << reg5) | (1 << reg6) | (1 << reg7) | (1 << lr));
+    // We only need to save reg0 (a0) and lr since we're passing just one argument
+    emit_push(ctx, (1 << reg0) | (1 << lr));
     
-    // Seting up arguments for read_registers_batch(vd, vs1, vs2, v0_flag, vd_buf, vs1_buf, vs2_buf, v0_buf)
-    // These are the instruction we will exectute at runtime and not during instrumentation
-    // Here I set first 8 registers as arguments for read_registers_batch function call
-    emit_set_reg(ctx, reg0, vd);
-    emit_set_reg(ctx, reg1, vs1);
-    emit_set_reg(ctx, reg2, vs2);
-    emit_set_reg(ctx, reg3, uses_mask ? 0 : 1);
-    emit_set_reg_ptr(ctx, reg4, vd_buf);
-    emit_set_reg_ptr(ctx, reg5, vs1_buf);
-    emit_set_reg_ptr(ctx, reg6, vs2_buf);
-    emit_set_reg_ptr(ctx, reg7, v0_buf);
+    // Set up argument: pass entry pointer in a0
+    // The function will extract vd, vs1, vs2, uses_mask, and all buffer pointers from entry
+    emit_set_reg_ptr(ctx, reg0, entry);
     
-    // Generating function call that will execute at runtime
-    emit_safe_fcall(ctx, (void *)read_registers_batch, 8);
+    // Generate function call that will execute at runtime
+    emit_safe_fcall(ctx, (void *)read_registers_batch, 1);
     
     // Restore registers
-    emit_pop(ctx, (1 << reg0) | (1 << reg1) | (1 << reg2) | (1 << reg3) | 
-                  (1 << reg4) | (1 << reg5) | (1 << reg6) | (1 << reg7) | (1 << lr));
+    emit_pop(ctx, (1 << reg0) | (1 << lr));
 }
 
 
@@ -272,6 +252,19 @@ struct rr_entry {
     void *v0_before;
     bool uses_mask;
 };
+
+// Batch read multiple vector registers at once
+// Takes entry pointer and extracts all needed data from it
+// This avoids the a7 conflict (a7 is used for function pointer in emit_safe_fcall)
+static void read_registers_batch(struct rr_entry *entry) {
+    // Extract register numbers and buffers from entry
+    read_register_value(entry->vd, true, entry->vd_before);
+    read_register_value(entry->vs1, true, entry->vs1_before);
+    read_register_value(entry->vs2, true, entry->vs2_before);
+    if (entry->uses_mask) {
+        read_register_value(0, true, entry->v0_before);
+    }
+}
 
 // Change this to be a general one later
 // Buffer
@@ -396,9 +389,8 @@ static struct rr_entry *init_rr_entry(mambo_context *ctx, uintptr_t pc, uint32_t
 // Uses batched register read to reduce code emission significantly
 static void capture_registers_before(mambo_context *ctx, struct rr_entry *entry) {
     // Batch all register reads into a single function call
-    emit_read_registers_batch(ctx, entry->vd, entry->vs1, entry->vs2, entry->uses_mask,
-                              entry->vd_before, entry->vs1_before, entry->vs2_before, 
-                              entry->v0_before);
+    // Pass entry pointer - function extracts all needed data from it
+    emit_read_registers_batch(ctx, entry);
 }
 
 // Runtime function: Add entry to trace buffer (after instruction executes)
