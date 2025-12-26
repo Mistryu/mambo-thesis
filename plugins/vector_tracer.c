@@ -298,20 +298,28 @@ static void read_registers_batch(struct rr_entry *entry) {
     fprintf(stderr, "[DEBUG] Buffers: vd_before=%p, vs1_before=%p, vs2_before=%p, v0_before=%p\n",
             entry->vd_before, entry->vs1_before, entry->vs2_before, entry->v0_before);
     
-    // Set VL to vlenb to ensure we store the entire register
-    // vsetvli rd, rs1, vtype - sets VL and vtype
-    // We use vlenb (stored in cached_vlenb) to set VL to maximum
-    uint32_t vl;
-    asm volatile("csrr %0, vlenb" : "=r"(vl));
-    fprintf(stderr, "[DEBUG] Current vlenb=%u, cached_vlenb=%u\n", vl, cached_vlenb);
+    // CRITICAL: safe_fcall_trampoline does NOT preserve vector extension state (VL, vtype)
+    // The vector state may be invalid when we enter this function, so we must set it properly
+    // before using vse8.v instructions
+    
+    uint32_t vlenb_val, vl_after_set;
+    
+    // Read vlenb to verify vector extension is available
+    asm volatile("csrr %0, vlenb" : "=r"(vlenb_val));
+    fprintf(stderr, "[DEBUG] vlenb=%u, cached_vlenb=%u\n", vlenb_val, cached_vlenb);
     
     // Set VL to vlenb (maximum) to store entire register
     // vsetvli rd, rs1, e8, m1 - sets VL=min(rs1, VLMAX) with e8 (8-bit elements), m1 (masked)
-
-    // We might have to set vtype to e8, m1 before setting VL this is just for nebugging rn fix it later
+    // This ensures we can store the entire vector register
+    // Note: We use e8 (8-bit elements) and m1 (unmasked) to match vse8.v requirements
     asm volatile("vsetvli zero, %0, e8, m1" : : "r"(cached_vlenb) : "memory");
-    asm volatile("csrr %0, vl" : "=r"(vl));
-    fprintf(stderr, "[DEBUG] Set VL to %u\n", vl);
+    asm volatile("csrr %0, vl" : "=r"(vl_after_set));
+    fprintf(stderr, "[DEBUG] Set VL to %u for vse8.v operations\n", vl_after_set);
+    
+    if (vl_after_set == 0) {
+        fprintf(stderr, "[DEBUG] ERROR: VL is 0 after vsetvli! Vector extension may not be enabled.\n");
+        return;
+    }
     
     fprintf(stderr, "[DEBUG] Reading vd=%u\n", entry->vd);
     read_register_value(entry->vd, true, entry->vd_before);
@@ -323,6 +331,7 @@ static void read_registers_batch(struct rr_entry *entry) {
         fprintf(stderr, "[DEBUG] Reading v0 (mask)\n");
         read_register_value(0, true, entry->v0_before);
     }
+    
     fprintf(stderr, "[DEBUG] read_registers_batch completed successfully\n");
 }
 
