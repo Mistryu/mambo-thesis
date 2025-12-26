@@ -62,6 +62,8 @@ ifeq ($(ARCH),aarch64)
 endif
 ifeq ($(ARCH), riscv64)
 	HEADERS += api/emit_riscv.h
+	# CFLAGS arguments for RISC-V vector extension as it may not have been enabled
+	CFLAGS += -march=rv64gcv -mabi=lp64d 
 	LDFLAGS += -Wl,-Ttext-segment=$(or $(TEXT_SEGMENT),0x7f000000)
 	PIE += pie/pie-riscv-field-decoder.o
 	PIE += pie/pie-riscv-encoder.o
