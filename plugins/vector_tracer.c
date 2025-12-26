@@ -66,6 +66,13 @@ static void read_register_value(uint8_t reg_num, bool is_vector, void *buffer) {
         // Use uintptr_t for address to avoid type mismatch as "r" needs integer not pointer
         uintptr_t addr = (uintptr_t)buffer;
         
+        if (!buffer) {
+            fprintf(stderr, "[DEBUG] ERROR: buffer is NULL for vector register %u!\n", reg_num);
+            return;
+        }
+        
+        fprintf(stderr, "[DEBUG] read_register_value: storing v%u to %p\n", reg_num, (void *)addr);
+        
         // Store vector register to buffer using vse8.v (RISC-V Vector Extension spec-compliant)
         // vse8.v vd, (rs1) - stores entire vector register vd as bytes to address in rs1
         // Stores VLEN bytes (entire register contents regardless of element width)
@@ -110,9 +117,16 @@ static void read_register_value(uint8_t reg_num, bool is_vector, void *buffer) {
             case 28: asm volatile("vse8.v v28, (%0)" : : "r"(addr) : "memory"); break;
             case 29: asm volatile("vse8.v v29, (%0)" : : "r"(addr) : "memory"); break;
             case 30: asm volatile("vse8.v v30, (%0)" : : "r"(addr) : "memory"); break;
-            case 31: asm volatile("vse8.v v31, (%0)" : : "r"(addr) : "memory"); break;
-            default: break; // Invalid register number
+            case 31: 
+                fprintf(stderr, "[DEBUG] Executing: vse8.v v31, (%p)\n", (void *)addr);
+                asm volatile("vse8.v v31, (%0)" : : "r"(addr) : "memory"); 
+                fprintf(stderr, "[DEBUG] vse8.v v31 completed\n");
+                break;
+            default: 
+                fprintf(stderr, "[DEBUG] ERROR: Invalid vector register number %u\n", reg_num);
+                break;
         }
+        fprintf(stderr, "[DEBUG] read_register_value: v%u stored successfully\n", reg_num);
     } else {
         // Read GP register value
         uintptr_t reg_value = 0;
@@ -183,20 +197,36 @@ static void emit_read_register(mambo_context *ctx, uint8_t reg_num, bool is_vect
 // This significantly reduces code emission compared to multiple separate calls
 // Passes entry pointer as constant - entry is allocated with mambo_alloc so it persists
 static void emit_read_registers_batch(mambo_context *ctx, struct rr_entry *entry) {
+    fprintf(stderr, "[DEBUG] emit_read_registers_batch: entry=%p, vd=%u, vs1=%u, vs2=%u\n",
+            (void *)entry, entry ? entry->vd : 0, entry ? entry->vs1 : 0, entry ? entry->vs2 : 0);
+    
+    if (!entry) {
+        fprintf(stderr, "[DEBUG] ERROR: entry is NULL in emit_read_registers_batch!\n");
+        return;
+    }
+    
     // emit_safe_fcall does NOT preserve lr, so we need to save it
     // We also need to save a0 to preserve the application's a0 value
     // Note: emit_safe_fcall will also push/pop lr, but that's okay - it's nested
+    fprintf(stderr, "[DEBUG] Emitting push for a0 and lr\n");
     emit_push(ctx, (1 << reg0) | (1 << lr));
     
     // Set up argument: pass entry pointer in a0
     // Entry is allocated with mambo_alloc and stored in thread plugin data, so pointer is valid
+    fprintf(stderr, "[DEBUG] Emitting set_reg_ptr: a0 = %p\n", (void *)entry);
     emit_set_reg_ptr(ctx, reg0, entry);
     
     // Generate function call that will execute at runtime
-    emit_safe_fcall(ctx, (void *)read_registers_batch, 1);
+    fprintf(stderr, "[DEBUG] Emitting safe_fcall to read_registers_batch=%p\n", (void *)read_registers_batch);
+    int ret = emit_safe_fcall(ctx, (void *)read_registers_batch, 1);
+    if (ret != 0) {
+        fprintf(stderr, "[DEBUG] ERROR: emit_safe_fcall returned %d\n", ret);
+    }
     
     // Restore registers
+    fprintf(stderr, "[DEBUG] Emitting pop for a0 and lr\n");
     emit_pop(ctx, (1 << reg0) | (1 << lr));
+    fprintf(stderr, "[DEBUG] emit_read_registers_batch completed\n");
 }
 
 
@@ -257,15 +287,42 @@ struct rr_entry {
 // Takes entry pointer and extracts all needed data from it
 // This avoids the a7 conflict (a7 is used for function pointer in emit_safe_fcall)
 static void read_registers_batch(struct rr_entry *entry) {
-    if (!entry) return;
+    fprintf(stderr, "[DEBUG] read_registers_batch called, entry=%p\n", (void *)entry);
     
-    // Extract register numbers and buffers from entry
+    if (!entry) {
+        fprintf(stderr, "[DEBUG] ERROR: entry is NULL!\n");
+        return;
+    }
+    
+    fprintf(stderr, "[DEBUG] Entry: vd=%u, vs1=%u, vs2=%u, uses_mask=%d\n", 
+            entry->vd, entry->vs1, entry->vs2, entry->uses_mask);
+    fprintf(stderr, "[DEBUG] Buffers: vd_before=%p, vs1_before=%p, vs2_before=%p, v0_before=%p\n",
+            entry->vd_before, entry->vs1_before, entry->vs2_before, entry->v0_before);
+    
+    // Set VL to vlenb to ensure we store the entire register
+    // vsetvli rd, rs1, vtype - sets VL and vtype
+    // We use vlenb (stored in cached_vlenb) to set VL to maximum
+    uint32_t vl;
+    asm volatile("csrr %0, vlenb" : "=r"(vl));
+    fprintf(stderr, "[DEBUG] Current vlenb=%u, cached_vlenb=%u\n", vl, cached_vlenb);
+    
+    // Set VL to vlenb (maximum) to store entire register
+    // vsetvli rd, rs1, e8, m1 - sets VL=min(rs1, VLMAX) with e8 (8-bit elements), m1 (masked)
+    asm volatile("vsetvli zero, %0, e8, m1" : : "r"(cached_vlenb) : "vtype", "vl");
+    asm volatile("csrr %0, vl" : "=r"(vl));
+    fprintf(stderr, "[DEBUG] Set VL to %u\n", vl);
+    
+    fprintf(stderr, "[DEBUG] Reading vd=%u\n", entry->vd);
     read_register_value(entry->vd, true, entry->vd_before);
+    fprintf(stderr, "[DEBUG] Reading vs1=%u\n", entry->vs1);
     read_register_value(entry->vs1, true, entry->vs1_before);
+    fprintf(stderr, "[DEBUG] Reading vs2=%u\n", entry->vs2);
     read_register_value(entry->vs2, true, entry->vs2_before);
     if (entry->uses_mask) {
+        fprintf(stderr, "[DEBUG] Reading v0 (mask)\n");
         read_register_value(0, true, entry->v0_before);
     }
+    fprintf(stderr, "[DEBUG] read_registers_batch completed successfully\n");
 }
 
 // Change this to be a general one later
@@ -418,16 +475,29 @@ bool mambo_is_vector(mambo_context *ctx) {
 
 // Executes before the instruction is executed
 static int vector_pre_inst_cb(mambo_context *ctx) {
-    if (!mambo_is_vector(ctx)) return 0;
+    uint32_t insn = *(uint32_t *)ctx->code.read_address;
+    fprintf(stderr, "[DEBUG] vector_pre_inst_cb: PC=%p, insn=0x%08x\n", 
+            (void *)ctx->code.read_address, insn);
+    
+    if (!mambo_is_vector(ctx)) {
+        fprintf(stderr, "[DEBUG] Not a vector instruction, skipping\n");
+        return 0;
+    }
+    
+    fprintf(stderr, "[DEBUG] Vector instruction detected\n");
     emit_counter64_incr(ctx, &vector_inst_count, 1);
     
-    uint32_t insn = *(uint32_t *)ctx->code.read_address;
-    if (!rvv_is_reg_reg(insn)) return 0;
+    if (!rvv_is_reg_reg(insn)) {
+        fprintf(stderr, "[DEBUG] Not a register-register instruction, skipping\n");
+        return 0;
+    }
     
+    fprintf(stderr, "[DEBUG] Register-register instruction detected\n");
     emit_counter64_incr(ctx, &reg_reg_count, 1);
     
     uint8_t vd, vs1, vs2, vm, funct3, funct6, opcode;
     rvv_extract_regs(insn, &vd, &vs1, &vs2, &vm, &funct3, &funct6, &opcode);
+    fprintf(stderr, "[DEBUG] Extracted: vd=%u, vs1=%u, vs2=%u, vm=%u\n", vd, vs1, vs2, vm);
     
     struct rr_entry *entry = init_rr_entry(ctx, (uintptr_t)ctx->code.read_address, insn,
                                             vd, vs1, vs2, vm, funct3, funct6, opcode);
@@ -436,8 +506,12 @@ static int vector_pre_inst_cb(mambo_context *ctx) {
         return 0;
     }
     
+    fprintf(stderr, "[DEBUG] Entry allocated: %p\n", (void *)entry);
     mambo_set_thread_plugin_data(ctx, entry);
+    
+    fprintf(stderr, "[DEBUG] Calling capture_registers_before\n");
     capture_registers_before(ctx, entry);
+    fprintf(stderr, "[DEBUG] vector_pre_inst_cb completed\n");
     return 0;
 }
 
