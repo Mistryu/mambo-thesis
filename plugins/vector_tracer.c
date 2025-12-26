@@ -181,15 +181,15 @@ static void emit_read_register(mambo_context *ctx, uint8_t reg_num, bool is_vect
 
 // Emit code to batch read multiple vector registers at once
 // This significantly reduces code emission compared to multiple separate calls
-// Passes entry pointer instead of 8 separate arguments to avoid a7 conflict
-// (a7 is used for function pointer in emit_safe_fcall)
+// Passes entry pointer as constant - entry is allocated with mambo_alloc so it persists
 static void emit_read_registers_batch(mambo_context *ctx, struct rr_entry *entry) {
-    // emit_safe_fcall does NOT preserve lr
-    // We only need to save reg0 (a0) and lr since we're passing just one argument
+    // emit_safe_fcall does NOT preserve lr, so we need to save it
+    // We also need to save a0 to preserve the application's a0 value
+    // Note: emit_safe_fcall will also push/pop lr, but that's okay - it's nested
     emit_push(ctx, (1 << reg0) | (1 << lr));
     
     // Set up argument: pass entry pointer in a0
-    // The function will extract vd, vs1, vs2, uses_mask, and all buffer pointers from entry
+    // Entry is allocated with mambo_alloc and stored in thread plugin data, so pointer is valid
     emit_set_reg_ptr(ctx, reg0, entry);
     
     // Generate function call that will execute at runtime
@@ -257,6 +257,8 @@ struct rr_entry {
 // Takes entry pointer and extracts all needed data from it
 // This avoids the a7 conflict (a7 is used for function pointer in emit_safe_fcall)
 static void read_registers_batch(struct rr_entry *entry) {
+    if (!entry) return;
+    
     // Extract register numbers and buffers from entry
     read_register_value(entry->vd, true, entry->vd_before);
     read_register_value(entry->vs1, true, entry->vs1_before);
@@ -573,5 +575,8 @@ memory accesses load and stores
 
 /*
 I have a big issue that I emit too many instruction. I need to optimize it otherwise the code doesn't run. 
+
+I had an issue that when I tried to use 8 registers for the function call, it didn't work.
+ I had to use a pointer to the entry instead. It's possible I overwrite the return address as I got illegal instruction error.
 
 */
