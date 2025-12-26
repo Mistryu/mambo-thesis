@@ -2,7 +2,7 @@
 
 #include <stdio.h>
 
-#include "plugins.h"
+#include "../plugins.h"
 
 static inline bool rvv_is_vector_word(uint32_t insn) {
     uint32_t opcode = insn & 0x7F;
@@ -32,6 +32,7 @@ static inline bool rvv_is_vector_word(uint32_t insn) {
 
 bool mambo_is_vector(mambo_context *ctx) {
     uint32_t insn = *(uint32_t *)ctx->code.read_address;
+    // Ask why code.read_address is not mambo_get_source_addr(ctx)
     return rvv_is_vector_word(insn);
 }
 
@@ -40,6 +41,7 @@ static uint64_t vector_inst_count = 0;
 static int vector_pre_inst_cb(mambo_context *ctx) {
     if (!mambo_is_vector(ctx))
         return 0;
+    // Why do we use emit counter insted of storing the variable
     emit_counter64_incr(ctx, &vector_inst_count, 1);
     return 0;
 }
@@ -47,6 +49,7 @@ static int vector_pre_inst_cb(mambo_context *ctx) {
 __attribute__((constructor)) static void vector_counter_init(void) {
     mambo_context *ctx = mambo_register_plugin();
     mambo_register_pre_inst_cb(ctx, &vector_pre_inst_cb);
+    // I'm guessing if we want to do post_instruction we need to register it here 
 }
 
 // Prints count at exit
