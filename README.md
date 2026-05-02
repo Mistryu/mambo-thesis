@@ -1,4 +1,4 @@
-# mambo-thesis (Fork of MAMBO-V)
+# MAMBO-V RISC-V Vector instruction tracer
 
 This repository is a fork of **MAMBO-V** (itself based on MAMBO), adapted for RVV-focused tracing and analysis workflows used in thesis experiments.
 
